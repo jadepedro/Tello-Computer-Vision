@@ -507,9 +507,9 @@ class telloCamera:
         confidence = max_predicted_item['confidence']
 
         # output
-        #if int(confidence) > 0.00001:
-        cv2.putText(img_copy, prediction, (160, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
-        cv2.putText(img_copy, str(confidence), (160, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 0), 2)
+        if int(confidence) > 0.90:
+            cv2.putText(img_copy, prediction, (160, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+            cv2.putText(img_copy, str(confidence), (160, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 0), 2)
         imgStack = utils.stackImages(1, [frame, img_copy])
         cv2.imshow('tello hand', imgStack)
 
