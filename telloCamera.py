@@ -395,7 +395,6 @@ class telloCamera:
         # Load model
         print("loading model")
         model = Model()
-        model.load()
         print("loaded")
 
         path = [
@@ -500,10 +499,12 @@ class telloCamera:
         img_copy = frame.copy()
 
         im_pil = Image.fromarray(img)
-        # Identify hand
+        # Identify hand https://stackoverflow.com/questions/37785641/how-to-find-max-value-in-array-of-dictionary
         outputs = model.predict(im_pil)
-        prediction = outputs['Prediction']
-        confidence = max(outputs['Confidences'])
+        from operator import itemgetter
+        max_predicted_item = max(outputs['predictions'], key=itemgetter('confidence'))
+        prediction = max_predicted_item['label']
+        confidence = max_predicted_item['confidence']
 
         # output
         #if int(confidence) > 0.00001:

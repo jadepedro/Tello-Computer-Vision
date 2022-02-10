@@ -7,44 +7,68 @@ Skeleton code showing how to load and run the TensorFlow SavedModel export packa
 import argparse
 import os
 import json
-import tensorflow as tf
-from PIL import Image
 import numpy as np
+from threading import Lock
 
-MODEL_DIR = os.path.join(os.path.dirname(__file__), "..")  # default assume that our export is in this file's parent directory
+# printing only warnings and error messages
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
+
+try:
+    import tensorflow as tf
+    from PIL import Image
+except ImportError:
+    raise ImportError("ERROR: Failed to import libraries. Please refer to READEME.md file\n")
+
+EXPORT_MODEL_VERSION = 1
 
 
-class Model(object):
-    def __init__(self, model_dir=MODEL_DIR):
+class TFModel:
+    def __init__(self, model_dir) -> None:
         # make sure our exported SavedModel folder exists
-        model_path = os.path.realpath(model_dir)
-        if not os.path.exists(model_path):
-            raise ValueError(f"Exported model folder doesn't exist {model_dir}")
-        self.model_path = model_path
-
-        # load our signature json file, this shows us the model inputs and outputs
-        # you should open this file and take a look at the inputs/outputs to see their data types, shapes, and names
-        with open(os.path.join(model_path, "signature.json"), "r") as f:
+        self.model_dir = model_dir
+        with open(os.path.join(model_dir, "signature.json"), "r") as f:
             self.signature = json.load(f)
+        self.model_file = "../" + self.signature.get("filename")
+        if not os.path.isfile(self.model_file):
+            raise FileNotFoundError(f"Model file does not exist")
         self.inputs = self.signature.get("inputs")
         self.outputs = self.signature.get("outputs")
+        self.lock = Lock()
 
-        # placeholder for the tensorflow session
-        self.session = None
+        # loading the saved model
+        self.model = tf.saved_model.load(tags=self.signature.get("tags"), export_dir=self.model_dir)
+        self.predict_fn = self.model.signatures["serving_default"]
 
-    def load(self):
-        self.cleanup()
-        # create a new tensorflow session
-        self.session = tf.compat.v1.Session(graph=tf.Graph())
-        # load our model into the session
-        tf.compat.v1.saved_model.loader.load(sess=self.session, tags=self.signature.get("tags"), export_dir=self.model_path)
+        # Look for the version in signature file.
+        # If it's not found or the doesn't match expected, print a message
+        version = self.signature.get("export_model_version")
+        if version is None or version != EXPORT_MODEL_VERSION:
+            print(
+                f"There has been a change to the model format. Please use a model with a signature 'export_model_version' that matches {EXPORT_MODEL_VERSION}."
+            )
 
-    def predict(self, image: Image.Image):
-        # load the model if we don't have a session
-        if self.session is None:
-            self.load()
-        # get the image width and height
+    def predict(self, image: Image.Image) -> dict:
+        # pre-processing the image before passing to model
+        image = self.process_image(image, self.inputs.get("Image").get("shape"))
+
+        with self.lock:
+            # create the feed dictionary that is the input to the model
+            feed_dict = {}
+            # first, add our image to the dictionary (comes from our signature.json file)
+            feed_dict[list(self.inputs.keys())[0]] = tf.convert_to_tensor(image)
+            # run the model!
+            outputs = self.predict_fn(**feed_dict)
+            # return the processed output
+            return self.process_output(outputs)
+
+    def process_image(self, image, input_shape) -> np.ndarray:
+        """
+        Given a PIL Image, center square crop and resize to fit the expected model input, and convert from [0,255] to [0,1] values.
+        """
         width, height = image.size
+        # ensure image type is compatible with model and convert if not
+        if image.mode != "RGB":
+            image = image.convert("RGB")
         # center crop image (you can substitute any other method to make a square image, such as just resizing or padding edges with 0)
         if width != height:
             square_size = min(width, height)
@@ -55,55 +79,43 @@ class Model(object):
             # Crop the center of the image
             image = image.crop((left, top, right, bottom))
         # now the image is square, resize it to be the right shape for the model input
-        if "Image" not in self.inputs:
-            raise ValueError("Couldn't find Image in model inputs - please report issue to Lobe!")
-        input_width, input_height = self.inputs["Image"]["shape"][1:3]
+        input_width, input_height = input_shape[1:3]
         if image.width != input_width or image.height != input_height:
             image = image.resize((input_width, input_height))
+
         # make 0-1 float instead of 0-255 int (that PIL Image loads by default)
         image = np.asarray(image) / 255.0
-        # create the feed dictionary that is the input to the model
-        # first, add our image to the dictionary (comes from our signature.json file)
-        feed_dict = {self.inputs["Image"]["name"]: [image]}
+        # pad with an extra batch dimension as expected by the model
+        return np.expand_dims(image, axis=0).astype(np.float32)
 
-        # list the outputs we want from the model -- these come from our signature.json file
-        # since we are using dictionaries that could have different orders, make tuples of (key, name) to keep track for putting
-        # the results back together in a dictionary
-        fetches = [(key, output["name"]) for key, output in self.outputs.items()]
-
-        # run the model! there will be as many outputs from session.run as you have in the fetches list
-        outputs = self.session.run(fetches=[name for _, name in fetches], feed_dict=feed_dict)
+    def process_output(self, outputs) -> dict:
         # do a bit of postprocessing
+        out_keys = ["label", "confidence"]
         results = {}
         # since we actually ran on a batch of size 1, index out the items from the returned numpy arrays
-        for i, (key, _) in enumerate(fetches):
-            val = outputs[i].tolist()[0]
+        for key, tf_val in outputs.items():
+            val = tf_val.numpy().tolist()[0]
             if isinstance(val, bytes):
                 val = val.decode()
             results[key] = val
-        return results
-
-    def cleanup(self):
-        # close our tensorflow session if one exists
-        if self.session is not None:
-            self.session.close()
-            self.session = None
-
-    def __del__(self):
-        self.cleanup()
+        confs = results["Confidences"]
+        labels = self.signature.get("classes").get("Label")
+        output = [dict(zip(out_keys, group)) for group in zip(labels, confs)]
+        sorted_output = {"predictions": sorted(output, key=lambda k: k["confidence"], reverse=True)}
+        return sorted_output
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict a label for an image.")
     parser.add_argument("image", help="Path to your image file.")
     args = parser.parse_args()
+    # Assume model is in the parent directory for this file
+    model_dir = os.path.join(os.getcwd(), "..")
+
     if os.path.isfile(args.image):
         image = Image.open(args.image)
-        # convert to rgb image if this isn't one
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        model = Model()
-        model.load()
+        model_dir = os.path.join(os.getcwd(), "..")
+        model = TFModel(model_dir=model_dir)
         outputs = model.predict(image)
         print(f"Predicted: {outputs}")
     else:

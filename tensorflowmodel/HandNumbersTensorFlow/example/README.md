@@ -22,7 +22,7 @@ Activate the virtual environment
 
 macOS `source tf-venv/bin/activate`
 
-Windows `tf-venv/Scripts/activate`
+Windows `tf-venv\Scripts\activate`
 
 Install the the dependencies for the example
 
@@ -31,3 +31,14 @@ Install the the dependencies for the example
 Run the example and see the model output
 
 `python tf_example.py path/to/image/for/testing`
+
+### Notes
+
+- We are using TensorFlow 2.5.0 to run the tf_example.py file. If you see any GPU errors or want to run the script on GPU please refer to https://www.tensorflow.org/install/gpu
+
+- If you see the error "OSError: image file is truncated", you may need to add the following lines the sample code due to an issue with PIL (Python Image Library)
+
+```python
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+```
