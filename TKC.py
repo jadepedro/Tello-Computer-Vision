@@ -9,10 +9,10 @@ def buildArgParser():
     # Instancia para los argumentos
     parser = argparse.ArgumentParser()
     # Añade los argumentos permitidos
-    parser.add_argument("-m", default='k', nargs='?', choices=['k', 'c', 's', 'obj', 'p', 'face', 'r'],
+    parser.add_argument("-m", default='k', nargs='?', choices=['k', 'c', 's', 'obj', 'p', 'face', 'r', 'pan'],
                         help="Enable keyboard control (k) / command control (c) / search color (s)\n \
                         /object track (obj) /path search (p) /face track (face)\n \
-                        /hand number recognition (r)")
+                        /hand number recognition (r) /panorama (pan)")
     parser.add_argument("-t", action='store_true', help="Enable test mode: no command sent")
     parser.add_argument("-l", action='store_true', help="Enable laptop camera")
     args = parser.parse_args()
@@ -60,6 +60,10 @@ def main():
         print("Recognizing hand numbers...")
         tCamera = telloCamera(test, useDroneCamera=not laptop)
         tCamera.startVideoLoopSearchHand()
+    elif mode == 'pan':
+        print("Face count on panorama")
+        tCamera = telloCamera(test, useDroneCamera=not laptop)
+        tCamera.startVideoLoopPanorama()
 
 if __name__ == '__main__':
     exit(main())

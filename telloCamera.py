@@ -11,6 +11,8 @@ import objectTagger
 import telloPathControl as telloPathControl
 from tensorflowmodel.HandNumbersTensorFlow.tf_prediction import Model
 
+from panorama import panorama
+
 
 import utils_mios as utils
 
@@ -68,6 +70,9 @@ class telloCamera:
     m_recognizer = None
     # names related to ids: example ==> Marcelo: id=1,  etc
     m_names = ['None', 'Javier', 'Diego', 'Luna', 'Mari']
+
+    # panorama builder
+    m_panorama = None
 
     def __init__(self, test, trackfunction="Face", useDroneCamera = True):
         print("use Drone Camera: ", useDroneCamera)
@@ -136,6 +141,51 @@ class telloCamera:
         cv2.createTrackbar("Val min", "Calibrate", self.m_lower_targetColor[2], 255, self.onTrackBarChange)
         cv2.createTrackbar("Val max", "Calibrate", self.m_upper_targetColor[2], 255, self.onTrackBarChange)
         self.startVideoLoopTarget()
+
+    def startVideoLoopPanorama(self, tookoff_=False, fly_=False, initialize_=True):
+        try:
+            self.m_panorama = panorama()
+            tookoff = tookoff_
+            self.m_fly = fly_
+            if initialize_:
+                self.m_tello = self.initializeTello()
+            m_tick = 0
+
+            while True:
+                # Open VideoStream
+                frame = self.telloGetFrame(self.m_tello, 320, 240)
+
+                # Call panorama function
+                img = self.m_panorama.updatePanorama(frame)
+                cv2.imshow('panorama', img)
+
+                cv2.waitKey(500)
+
+                # identify number of faces on panorama
+                #(cX, cY, boxArea) = self.m_target_function(frame)
+
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    if self.m_fly:
+                        self.m_tello.land()
+                    break
+
+                if cv2.waitKey(1) & 0xFF == ord('f'):
+                    print("taking off")
+                    if not self.m_test and not tookoff:
+                        self.m_fly = True
+                        self.m_telloPIDControl.setFly(self.m_fly)
+                        self.m_tello.takeoff()
+                        self.m_tello.move_up(80)
+                        tookoff = True
+
+            if self.m_test:
+                self.m_capLaptop.release()
+
+        except ValueError:
+            if not self.m_tello is None:
+                self.m_tello.land()
+        cv2.destroyAllWindows()
 
     def startVideoLoopTarget(self, tookoff_=False, fly_=False, initialize_=True):
         try:
