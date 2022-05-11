@@ -3,7 +3,7 @@ import numpy as np
 
 # obtenido de:
 # https://www.youtube.com/watch?v=WQeoO7MI0Bs
-def stackImages(scale, imgArray):
+def stackImages(scale, imgArray, autoswidth=False):
     rows = len(imgArray)
     cols = len(imgArray[0])
     rowsAvailable = isinstance(imgArray[0], list)

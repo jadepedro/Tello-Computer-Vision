@@ -17,8 +17,8 @@ class telloControl(object):
         "t": ("take off drone", "taking off"),
         "l": ("land drone", "landing"),
         "f": ("flip drone (direction)", "flipping drone"),
-        "ccw": ("rotate drone ccw (degrees)", "rotating ccw 45"),
-        "cw": ("rotate drone cw (degrees)", "rotating cw 45"),
+        "ccw": ("rotate drone ccw (degrees)", "rotating ccw"),
+        "cw": ("rotate drone cw (degrees)", "rotating cw"),
         "exit": ("exit drone control", "exiting")
     }
 

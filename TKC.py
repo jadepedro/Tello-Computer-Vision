@@ -9,18 +9,20 @@ def buildArgParser():
     # Instancia para los argumentos
     parser = argparse.ArgumentParser()
     # Añade los argumentos permitidos
-    parser.add_argument("-m", default='k', nargs='?', choices=['k', 'c', 's', 'obj', 'p', 'face', 'r', 'pan'],
+    parser.add_argument("-m", default='k', nargs='?', choices=['k', 'c', 's', 'obj', 'p', 'face', 'r', 'pan', 'mf'],
                         help="Enable keyboard control (k) / command control (c) / search color (s)\n \
                         /object track (obj) /path search (p) /face track (face)\n \
-                        /hand number recognition (r) /panorama (pan)")
+                        /hand number recognition (r) /panorama (pan) /multiface(mf)")
     parser.add_argument("-t", action='store_true', help="Enable test mode: no command sent")
     parser.add_argument("-l", action='store_true', help="Enable laptop camera")
+    parser.add_argument("-s", default='36', help="For panorama search, number of steps")
+    parser.add_argument("-cm", default=0.10, help="Margin for centering target on panorama")
     args = parser.parse_args()
 
-    return args.m, args.t, args.l
+    return args.m, args.t, args.l, args.s, args.cm
 
 def main():
-    mode, test, laptop = buildArgParser()
+    mode, test, laptop, steps, center_margin = buildArgParser()
     print("laptop:", laptop)
 
     # Connect and start fly
@@ -63,7 +65,11 @@ def main():
     elif mode == 'pan':
         print("Face count on panorama")
         tCamera = telloCamera(test, useDroneCamera=not laptop)
-        tCamera.startVideoLoopPanorama()
+        tCamera.startVideoLoopPanorama(steps=int(steps), center_margin=float(center_margin))
+    elif mode == 'mf':
+        print("Multiface count with repetition detection")
+        tCamera = telloCamera(test, useDroneCamera=not laptop)
+        tCamera.startVideoLoopMultiFace()
 
 if __name__ == '__main__':
     exit(main())

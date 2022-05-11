@@ -9,12 +9,17 @@ from telloPIDControl import telloPIDControl
 from textRecognition import TextRecognition
 import objectTagger
 import telloPathControl as telloPathControl
+import telloControl as telloControl
 from tensorflowmodel.HandNumbersTensorFlow.tf_prediction import Model
 
 from panorama import panorama
+from mediapipeMultiface import multifaceDetector
+from markerDetector import markerDetector
 
 
 import utils_mios as utils
+
+from time import time
 
 class telloCamera:
     # test mode
@@ -74,6 +79,15 @@ class telloCamera:
     # panorama builder
     m_panorama = None
 
+    # multiface detector
+    m_multiface_detector = None
+
+    # marker detector
+    m_marker_detector = None
+
+    # tello control
+    m_telloControl = None
+
     def __init__(self, test, trackfunction="Face", useDroneCamera = True):
         print("use Drone Camera: ", useDroneCamera)
         self.m_useDroneCamera = useDroneCamera
@@ -82,6 +96,7 @@ class telloCamera:
         self.m_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default_b.xml")
         self.m_telloPIDControl = telloPIDControl(self.m_tello, (320, 240), self.m_test)
         self.m_recognizer = cv2.face.LBPHFaceRecognizer_create()
+        self.m_telloControl = telloControl.telloControl(test)
         self.m_recognizer.read('trainer/trainer.yml')
         if not self.m_test:
             self.m_tello.connect()
@@ -142,9 +157,143 @@ class telloCamera:
         cv2.createTrackbar("Val max", "Calibrate", self.m_upper_targetColor[2], 255, self.onTrackBarChange)
         self.startVideoLoopTarget()
 
-    def startVideoLoopPanorama(self, tookoff_=False, fly_=False, initialize_=True):
+    def startVideoLoopPanorama(self, tookoff_=False, fly_=False, initialize_=True, steps=36, center_margin=0.10):
         try:
-            self.m_panorama = panorama()
+
+            # build multiface detector
+            self.m_multiface_detector = multifaceDetector()
+
+            # build panorama builder
+            self.m_panorama = panorama(self.m_multiface_detector)
+
+            # build marker detector
+            self.m_marker_detector = markerDetector()
+
+            tookoff = tookoff_
+            self.m_fly = fly_
+            if initialize_:
+                self.m_tello = self.initializeTello()
+
+            # accumulated number of faces
+            accumulated_faces = 0
+            # accumulated angle rotated
+            accumulated_angle = 0
+            print ("Will panorama through " + str(steps) + " steps")
+
+            # wait for tookoff
+            while True:
+                # Open VideoStream
+                frame = self.telloGetFrame(self.m_tello, 320, 240)
+                cv2.imshow("frame", frame)
+                breakme = self.handleKeyboard(took_off_breaks=True)
+                if breakme:
+                    break
+
+            # main loop
+            print("getting faces")
+            while True:
+                try:
+
+                    # get the number of maxfaces by sampling several times
+                    num_faces, img = self.getMaxFaces(center_margin=center_margin)
+                    # accumulate faces
+                    accumulated_faces += num_faces
+                    print("Most probable num (centered) faces " + str(num_faces))
+                    cv2.imshow("frame", img)
+                    # Add to image array
+                    self.m_panorama.capturePanorama(img, False, True)
+                    # self.m_panorama.extendPanorama(img)
+                except ValueError:
+                    print(str(ValueError))
+
+                # Common keyboard handling
+                if self.handleKeyboard():
+                    break
+
+                if self.m_test:
+                    cv2.waitKey(0)
+
+                # accumulate angle
+                accumulated_angle += int(360/steps)
+                print("accumulated angle " + str(accumulated_angle))
+                # stop if reached 360 degrees
+                if int(accumulated_angle) >= 360:
+                    print("finished 360 degrees")
+                    break
+                else:
+                    self.m_telloControl.singleCommand("cw " + str(int(360/steps)))
+
+                #finished = pathControl.nextPath()
+                #if finished:
+                #    break
+
+            # build panorama and show resized
+            pan = self.m_panorama.processPanorama(stitch=False)
+            # cv2.namedWindow('panorama', cv2.WINDOW_NORMAL)
+            h, w, c = pan.shape
+            ratio = h / w
+            pan_res = cv2.resize(pan, (1920, int(1920 * ratio)))
+            cv2.imshow('panorama', pan_res)
+
+            # identify number of faces through accumulated faces
+            print("Detected " + str(accumulated_faces) + " faces through accumulated faces")
+
+            # identify number of faces on panorama through markers
+            num= self.m_marker_detector.detectMarkers(pan)
+            print("Detected " + str(num) + " faces through markers")
+            if not self.m_test:
+                self.m_tello.land()
+            cv2.waitKey(0)
+
+            if self.m_test:
+                self.m_capLaptop.release()
+
+        except ValueError:
+            if not self.m_tello is None:
+                self.m_tello.land()
+        cv2.destroyAllWindows()
+
+    def getMaxFaces(self,lookup_iterations=10, center_margin=0.10):
+        """
+        Retrieves the maximum faces during a given time frame
+        :param lookup_iterations: number of captures
+        :return: number of faces with highest frequency ocurrence
+        """
+
+        # array of number of faces (up to 9)
+        num_faces_array = np.zeros(shape=(9), dtype=int)
+        frame_faces_array = np.empty(shape=(9),dtype=object)
+
+        for i in range(lookup_iterations):
+
+            # Open VideoStream
+            frame = self.telloGetFrame(self.m_tello, 320, 240)
+
+            # identify number of faces on panorama
+            num_of_faces_detected, num_of_faces_marked = self.m_multiface_detector.detectFaces(frame, center_margin)
+            # count the number of faces marked and register in the array
+            num_faces_array[num_of_faces_marked] = num_faces_array[num_of_faces_marked] + 1
+            # save frame with the faces
+            frame_faces_array[num_of_faces_marked] = frame
+
+            # cv2.putText(frame, str(num_of_faces_detected), (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 1)
+            # cv2.imshow('face counter', frame)
+            # cv2.waitKey(1)
+
+        max_index = np.where(num_faces_array == np.amax(num_faces_array))
+        try:
+            index = int(max_index[0])
+        except:
+            index = 0
+
+        return index, frame_faces_array[index]
+
+    def startVideoLoopMultiFace(self, tookoff_=False, fly_=False, initialize_=True):
+        try:
+
+            # build multiface detector
+            self.m_multiface_detector = multifaceDetector()
+
             tookoff = tookoff_
             self.m_fly = fly_
             if initialize_:
@@ -155,15 +304,8 @@ class telloCamera:
                 # Open VideoStream
                 frame = self.telloGetFrame(self.m_tello, 320, 240)
 
-                # Call panorama function
-                img = self.m_panorama.updatePanorama(frame)
-                cv2.imshow('panorama', img)
-
-                cv2.waitKey(500)
-
                 # identify number of faces on panorama
-                #(cX, cY, boxArea) = self.m_target_function(frame)
-
+                num = self.m_multiface_detector.detectFaces(frame)
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     if self.m_fly:
@@ -246,6 +388,11 @@ class telloCamera:
         cv2.putText(img, str(confidence), (x+5, y+h-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 1)
 
     def getFace(self, img):
+        """
+        Identifies the individual in the given frame
+        :param img: image containing the faces
+        :return:
+        """
         # review https://towardsdatascience.com/real-time-face-recognition-an-end-to-end-project-b738bb0f7348
         img_copy = img.copy()
 
@@ -567,9 +714,9 @@ class telloCamera:
 
         return prediction, confidence
 
-    def handleKeyboard(self):
+    def handleKeyboard(self,wait=1,took_off_breaks=False):
         breakme = False
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(wait) & 0xFF
         if key == ord('q'):
             if self.m_fly:
                 self.m_tello.land()
@@ -580,9 +727,12 @@ class telloCamera:
             if not self.m_test and not self.m_tookoff:
                 self.m_fly = True
                 self.m_telloPIDControl.setFly(self.m_fly)
+
                 self.m_tello.takeoff()
-                #self.m_tello.move_up(50)
+                self.m_tello.move_up(90)
                 self.m_tookoff = True
+            if took_off_breaks:
+                breakme = True
 
         elif key == ord('n'):
             print ("next step")
