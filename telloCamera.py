@@ -15,6 +15,7 @@ from tensorflowmodel.HandNumbersTensorFlow.tf_prediction import Model
 from panorama import panorama
 from mediapipeMultiface import multifaceDetector
 from markerDetector import markerDetector
+from fingerCounter import fingerCounter
 
 
 import utils_mios as utils
@@ -88,6 +89,9 @@ class telloCamera:
     # tello control
     m_telloControl = None
 
+    # finger counter through mediapipe
+    m_fingerCounter = None
+
     def __init__(self, test, trackfunction="Face", useDroneCamera = True):
         print("use Drone Camera: ", useDroneCamera)
         self.m_useDroneCamera = useDroneCamera
@@ -98,6 +102,7 @@ class telloCamera:
         self.m_recognizer = cv2.face.LBPHFaceRecognizer_create()
         self.m_telloControl = telloControl.telloControl(test)
         self.m_recognizer.read('trainer/trainer.yml')
+
         if not self.m_test:
             self.m_tello.connect()
         else:
@@ -588,7 +593,7 @@ class telloCamera:
             self.m_tello.land()
         cv2.waitKey(0)
 
-    def startVideoLoopSearchHand(self):
+    def startVideoLoopSearchHand(self, lobe_method = False):
         # Load model
         print("loading model")
         model = Model()
@@ -619,6 +624,7 @@ class telloCamera:
             self.m_tookoff = False
             self.m_fly = False
             self.m_tello = self.initializeTello()
+            self.m_fingerCounter = fingerCounter()
 
             # 1. Identify hand
             while True:
@@ -626,7 +632,12 @@ class telloCamera:
                 frame = self.telloGetFrame(self.m_tello, 320, 240)
 
                 # identify number
-                num, _ = self.identifyNumber(frame, model)
+                if lobe_method:
+                    num, _ = self.identifyNumber(frame, model)
+                else:
+                    _, _, count = self.m_fingerCounter.countFingers(frame)
+                    # add the fingers in both hands
+                    num = count['RIGHT'] + count['LEFT']
 
                 # Common keyboard handling
                 if self.handleKeyboard():
@@ -642,7 +653,7 @@ class telloCamera:
             textRecognition = TextRecognition(number)
             pathControl = telloPathControl.pathControl(self.m_test, path)
 
-            print("searching: ", number)
+            print("searching: >", number, "<")
 
             while True:
                 # Open VideoStream
@@ -713,6 +724,13 @@ class telloCamera:
         # print("prediction:", prediction, " confidence:", confidence)
 
         return prediction, confidence
+
+    def identifyNumberMediaPipe(self, frame):
+        '''
+        Identify the number of fingers using mediapipe
+        :param frame:
+        :return:
+        '''
 
     def handleKeyboard(self,wait=1,took_off_breaks=False):
         breakme = False
