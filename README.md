@@ -56,3 +56,5 @@ start with the proper method indicated in the above paragraph and then drill dow
 ## Ejemplo de referencia
 
 Para una introduccion basica al SDK del Tello (envio de comandos, lectura de estado, video y planificacion de rutas), el proyecto de ejemplo [tello-ai](https://bitbucket.org/RobotAndCode/tello-ai) de RobotAndCode puede servir de punto de partida.
+
+Otro ejemplo de referencia, con codigo de muestra de Ryze/DJI para el SDK del Tello (licencia MIT): [Tello-Python](https://github.com/dji-sdk/Tello-Python).
