@@ -52,3 +52,7 @@ I've tried to document the code enough with comments, so to understand a feature
 start with the proper method indicated in the above paragraph and then drill down.
 
 
+
+## Ejemplo de referencia
+
+Para una introduccion basica al SDK del Tello (envio de comandos, lectura de estado, video y planificacion de rutas), el proyecto de ejemplo [tello-ai](https://bitbucket.org/RobotAndCode/tello-ai) de RobotAndCode puede servir de punto de partida.
